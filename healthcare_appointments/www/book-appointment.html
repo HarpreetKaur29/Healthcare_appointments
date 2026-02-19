@@ -1,0 +1,248 @@
+{% extends "templates/web.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block page_content %}
+<div class="container mt-4 mb-5" style="max-width: 700px;">
+
+	<div class="mb-4">
+		<h2>Book an Appointment</h2>
+		<p class="text-muted">Fill in the details below to schedule your visit.</p>
+	</div>
+
+	<!-- Alert box for errors and info messages -->
+	<div id="booking-alert" class="alert" role="alert" style="display: none;"></div>
+
+	<!-- Booking Form -->
+	<div id="booking-form-wrapper">
+		<form id="booking-form" novalidate>
+
+			<!-- Service Selection -->
+			<div class="form-group mb-3">
+				<label for="service" class="form-label fw-bold">Healthcare Service <span class="text-danger">*</span></label>
+				<select class="form-control" id="service" name="service" required>
+					<option value="">— Select a Service —</option>
+					{% for s in services %}
+					<option
+						value="{{ s.name }}"
+						data-price="{{ s.price }}"
+						data-duration="{{ s.duration_minutes }}">
+						{{ s.service_name }}
+						(&#8377;{{ "{:,.0f}".format(s.price) }} · {{ s.duration_minutes }} min)
+					</option>
+					{% endfor %}
+				</select>
+			</div>
+
+			<!-- Patient Details -->
+			<div class="row">
+				<div class="col-md-6 form-group mb-3">
+					<label for="patient_name" class="form-label fw-bold">Patient Name <span class="text-danger">*</span></label>
+					<input type="text" class="form-control" id="patient_name"
+						name="patient_name" placeholder="Full Name" required>
+				</div>
+				<div class="col-md-6 form-group mb-3">
+					<label for="patient_contact" class="form-label fw-bold">Contact (Phone / Email) <span class="text-danger">*</span></label>
+					<input type="text" class="form-control" id="patient_contact"
+						name="patient_contact" placeholder="e.g. 9876543210" required>
+				</div>
+			</div>
+
+			<!-- Date and Time -->
+			<div class="row">
+				<div class="col-md-6 form-group mb-3">
+					<label for="appointment_date" class="form-label fw-bold">Appointment Date <span class="text-danger">*</span></label>
+					<input type="date" class="form-control" id="appointment_date"
+						name="appointment_date" required>
+				</div>
+				<div class="col-md-6 form-group mb-3">
+					<label for="appointment_time" class="form-label fw-bold">Appointment Time <span class="text-danger">*</span></label>
+					<input type="time" class="form-control" id="appointment_time"
+						name="appointment_time" min="09:00" max="16:59" required>
+					<small class="text-muted">Clinic hours: 9:00 AM – 5:00 PM</small>
+				</div>
+			</div>
+
+			<!-- Dynamic Summary -->
+			<div class="card bg-light mb-4">
+				<div class="card-body">
+					<div class="row text-center">
+						<div class="col-md-6 mb-2 mb-md-0">
+							<div class="text-muted small">Estimated End Time</div>
+							<div class="fw-bold fs-5" id="end-time-display">—</div>
+						</div>
+						<div class="col-md-6">
+							<div class="text-muted small">Total Amount</div>
+							<div class="fw-bold fs-5" id="total-amount-display">—</div>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<button type="submit" class="btn btn-primary w-100" id="submit-btn">
+				Book Appointment
+			</button>
+		</form>
+	</div>
+
+	<!-- Success Panel (hidden until booking succeeds) -->
+	<div id="success-panel" style="display: none;">
+		<div class="alert alert-success mt-3">
+			<h4 class="alert-heading">Appointment Confirmed!</h4>
+			<hr>
+			<p class="mb-1">
+				<strong>Appointment ID:</strong> <span id="appt-id" class="text-monospace"></span>
+			</p>
+			<p class="mb-0">
+				<strong>Invoice:</strong> <span id="invoice-id" class="text-monospace"></span>
+				<span class="badge bg-success text-white ms-2">Paid · Cash</span>
+			</p>
+		</div>
+		<div class="text-center mt-3">
+			<a href="/book-appointment" class="btn btn-outline-primary">Book Another Appointment</a>
+		</div>
+	</div>
+
+</div>
+
+<script>
+(function () {
+	"use strict";
+
+	// Set today as the minimum selectable date
+	var today = new Date().toISOString().split("T")[0];
+	document.getElementById("appointment_date").setAttribute("min", today);
+
+	var serviceSelect = document.getElementById("service");
+	var timeInput = document.getElementById("appointment_time");
+	var endTimeDisplay = document.getElementById("end-time-display");
+	var totalAmountDisplay = document.getElementById("total-amount-display");
+	var form = document.getElementById("booking-form");
+	var alertDiv = document.getElementById("booking-alert");
+	var successPanel = document.getElementById("success-panel");
+	var bookingFormWrapper = document.getElementById("booking-form-wrapper");
+	var submitBtn = document.getElementById("submit-btn");
+
+	// ---- Helpers ----
+
+	function showAlert(message, type) {
+		alertDiv.className = "alert alert-" + (type || "danger");
+		alertDiv.textContent = message;
+		alertDiv.style.display = "block";
+		alertDiv.scrollIntoView({ behavior: "smooth", block: "center" });
+	}
+
+	function hideAlert() {
+		alertDiv.style.display = "none";
+	}
+
+	function formatCurrency(amount) {
+		if (typeof frappe !== "undefined" && frappe.format_currency) {
+			return frappe.format_currency(amount);
+		}
+		return "₹ " + parseFloat(amount).toLocaleString("en-IN", {
+			minimumFractionDigits: 2,
+			maximumFractionDigits: 2,
+		});
+	}
+
+	// ---- Dynamic updates ----
+
+	function updateSummary() {
+		var service = serviceSelect.value;
+		var time = timeInput.value;
+
+		if (!service) {
+			endTimeDisplay.textContent = "—";
+			totalAmountDisplay.textContent = "—";
+			return;
+		}
+
+		// Total amount — read directly from the selected option's data attribute
+		var selectedOpt = serviceSelect.options[serviceSelect.selectedIndex];
+		var price = parseFloat(selectedOpt.getAttribute("data-price") || "0");
+		totalAmountDisplay.textContent = formatCurrency(price);
+
+		// End time — fetched from server
+		if (!time) {
+			endTimeDisplay.textContent = "—";
+			return;
+		}
+
+		frappe.call({
+			method: "healthcare_appointments.healthcare_appointments.web_methods.get_end_time",
+			args: { service: service, appointment_time: time },
+			callback: function (r) {
+				endTimeDisplay.textContent = r.message || "—";
+			},
+		});
+	}
+
+	serviceSelect.addEventListener("change", updateSummary);
+	timeInput.addEventListener("change", updateSummary);
+
+	// ---- Form submission ----
+
+	form.addEventListener("submit", function (e) {
+		e.preventDefault();
+		hideAlert();
+
+		var patientName = document.getElementById("patient_name").value.trim();
+		var patientContact = document.getElementById("patient_contact").value.trim();
+		var appointmentDate = document.getElementById("appointment_date").value;
+		var appointmentTime = timeInput.value;
+		var service = serviceSelect.value;
+
+		// Client-side presence validation
+		if (!patientName || !patientContact || !appointmentDate || !appointmentTime || !service) {
+			showAlert("Please fill in all required fields.", "warning");
+			return;
+		}
+
+		submitBtn.disabled = true;
+		submitBtn.textContent = "Booking…";
+
+		frappe.call({
+			method: "healthcare_appointments.healthcare_appointments.web_methods.book_appointment",
+			args: {
+				patient_name: patientName,
+				patient_contact: patientContact,
+				appointment_date: appointmentDate,
+				appointment_time: appointmentTime,
+				service: service,
+			},
+			callback: function (r) {
+				submitBtn.disabled = false;
+				submitBtn.textContent = "Book Appointment";
+
+				if (r.exc) {
+					// Server-side exception — parse the message from _server_messages
+					var msg = "An error occurred. Please try again.";
+					if (r._server_messages) {
+						try {
+							var msgs = JSON.parse(r._server_messages);
+							if (msgs.length) {
+								var parsed = JSON.parse(msgs[0]);
+								msg = parsed.message || msg;
+							}
+						} catch (_) {
+							msg = r.exc;
+						}
+					}
+					showAlert(msg, "danger");
+					return;
+				}
+
+				if (r.message) {
+					bookingFormWrapper.style.display = "none";
+					successPanel.style.display = "block";
+					document.getElementById("appt-id").textContent = r.message.appointment;
+					document.getElementById("invoice-id").textContent = r.message.invoice;
+					successPanel.scrollIntoView({ behavior: "smooth" });
+				}
+			},
+		});
+	});
+})();
+</script>
+{% endblock %}
