@@ -7,7 +7,6 @@ no_cache = 1
 
 
 def get_context(context):
-	"""Inject available Healthcare Services into the Jinja template context."""
 	context.title = "Book an Appointment"
 	context.services = frappe.get_all(
 		"Healthcare Service",

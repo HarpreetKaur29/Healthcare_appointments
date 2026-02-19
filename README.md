@@ -1,7 +1,3 @@
-Here's the humanised version:
-
-
-
 # Healthcare Appointments — Frappe Custom App
 
 A custom Frappe + ERPNext app I built as part of a technical assignment. It lets a clinic manage appointment bookings through a public-facing page, and automatically generates a paid Sales Invoice in ERPNext for every booking, no patient login needed.

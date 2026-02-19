@@ -2,7 +2,6 @@
 
 frappe.ui.form.on("Clinic Appointment", {
 	refresh(frm) {
-		// Add convenience button to mark as Completed for Scheduled appointments
 		if (!frm.is_new() && frm.doc.status === "Scheduled") {
 			frm.add_custom_button(__("Mark as Completed"), () => {
 				frappe.confirm(
